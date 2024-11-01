@@ -1,0 +1,379 @@
+#config
+    config OSC = IRCIO67
+    config FCMEN = OFF
+    config IESO = OFF
+    config PWRT = ON
+    config BOREN = BOACTIVE
+    config BORV = 3
+    config WDT = ON
+    config WDTPS = 512
+    config PBADEN = OFF
+    config LPT1OSC = OFF
+    config MCLRE = OFF 
+    config STVREN = ON
+    config LVP = OFF
+    config BBSIZ = 1024
+    config XINST = OFF
+    config DEBUG = OFF
+    config CP0 = OFF
+    config CP1 = OFF
+    config CP2 = OFF
+    config CP3 = OFF
+    config CPB = OFF
+    config CPD = OFF
+    config WRT0 = OFF
+    config WRT1 = OFF
+    config WRT2 = OFF
+    config WRT3 = OFF
+    config WRTC = OFF
+    config WRTB = OFF
+    config WRTD = OFF
+    config EBTR0 = OFF
+    config EBTR1 = OFF
+    config EBTR2 = OFF
+    config EBTR3 = OFF
+    config EBTRB = OFF
+#endconfig
+
+CLEAR
+ENABLE DEBUG
+define WRITE_INT 1 
+DEFINE OSC 4
+OSCCON.6 = 1
+OSCCON.5 = 1
+OSCCON.4 = 0
+
+' UART configuration
+DEFINE HSER_BAUD 9600                                                                                                   ' Hser baud rate
+DEFINE HSER_CLROERR 1                                                                                                   ' Hser clear overflow automatically
+'DEFINE HSER_SPBRG 25                                                                                                    ' Hser spbrg init
+DEFINE HSER_RCSTA 90h                                                                                                   ' Hser receive status init
+DEFINE HSER_TXSTA 24h                                                                                                   ' Hser transmit status init
+DEFINE HSER_BITS 8    
+
+
+
+                                                                                         '
+PIE1.4 = 0   
+'peripheral interrupts
+'INTCON = %11000000 
+'INTCON =%10100000  
+' Enable the serial receive interrupt   
+
+PIE1 = %00100000
+
+LED0 VAR PORTD.0   ' Assign name "LED" to PORTD.0
+LED1 VAR PORTD.2   ' Assign name "LED" to PORTD.1
+DRIVER VAR PORTD.1 
+' Variables
+slave_address   VAR BYTE
+function_code   VAR BYTE
+start_address   VAR WORD
+quantity        VAR WORD
+crc             VAR WORD
+rx_buffer       VAR BYTE[11]
+tx_buffer       VAR BYTE[37]
+coil1           VAR BIT
+coil2           VAR BIT
+holding_reg1    VAR WORD
+holding_reg2    VAR WORD
+holding_reg3    VAR WORD
+holding_reg4    VAR WORD
+holding_reg5    VAR WORD
+holding_reg6    VAR WORD
+holding_reg7    VAR WORD
+holding_reg8    VAR WORD
+holding_reg9    VAR WORD
+holding_reg10   VAR WORD
+holding_reg11   VAR WORD
+holding_reg12   VAR WORD
+holding_reg13   VAR WORD
+holding_reg14   VAR WORD
+holding_reg15   VAR WORD
+holding_reg16   VAR WORD
+
+
+i_global               VAR BYTE
+j               VAR BYTE
+temp_byte            VAR BYTE
+data_length     VAR BYTE
+
+' Initialize variables
+slave_address = 1
+coil1 = 0
+coil2 = 0
+holding_reg1 = 0
+holding_reg2 = 0
+holding_reg3 = 0
+holding_reg4 = 0
+holding_reg5 = 0
+holding_reg6 = 0
+holding_reg7 = 0
+holding_reg8 = 0
+holding_reg9 = 0
+holding_reg10 = 0
+holding_reg11 = 0
+holding_reg12 = 0
+holding_reg13 = 0
+holding_reg14 = 0
+holding_reg15 = 0
+holding_reg16 = 0
+
+ON INTERRUPT GOTO RECEIVE_MODBUS_FRAME
+
+
+
+' Main program loop
+MAIN:
+    GOSUB RECEIVE_MODBUS_FRAME
+    IF rx_buffer[0] = slave_address THEN
+        GOSUB PROCESS_MODBUS_REQUEST
+    ENDIF
+    gosub LED_INDICATION
+    GOTO MAIN
+
+' Subroutine to receive Modbus frame
+RECEIVE_MODBUS_FRAME:
+    TRISD.1 = 0
+    i_global = 0
+    WHILE i_global < 11    'could be 9
+        low driver
+        HSERIN 50, TIMEOUT, [temp_byte]          '2000 by default
+        rx_buffer[i_global] = temp_byte
+        i_global = i_global + 1
+        high driver
+    WEND
+    pauseus 50
+    return
+    
+TIMEOUT:
+    RETURN
+
+' Subroutine to process Modbus request
+PROCESS_MODBUS_REQUEST:
+    function_code = rx_buffer[1]
+    start_address = rx_buffer[2] * 256 + rx_buffer[3]
+    'quantity = rx_buffer[4] * 256 + rx_buffer[5]
+    quantity = rx_buffer[5]
+    
+    SELECT CASE function_code
+        CASE 1  ' Read Coils               function code 0x01 or 1
+            GOSUB READ_COILS
+        CASE 3  ' Read Holding Registers   function code 0x03 or 3
+            GOSUB READ_HOLDING_REGISTERS
+        CASE 5  ' Write Single Coil        function code 0x05 or 5
+            GOSUB WRITE_SINGLE_COIL
+        CASE 6  ' Write Single Register    function code 0x06 or 6
+            GOSUB WRITE_SINGLE_REGISTER
+        CASE 16  ' Write Single Register   function code 0x10 or 16
+            GOSUB WRITE_MULTIPLE_REGISTERS
+    END SELECT
+    RETURN
+
+' Subroutine to read coils
+READ_COILS:
+    tx_buffer[0] = slave_address
+    tx_buffer[1] = function_code
+    tx_buffer[2] = 1  ' Byte count
+    tx_buffer[3] = coil1 + (coil2 * 2)
+    data_length = 4
+    GOSUB CALCULATE_CRC
+    tx_buffer[4] = crc.LOWBYTE
+    tx_buffer[5] = crc.HIGHBYTE
+    GOSUB SEND_MODBUS_RESPONSE
+    RETURN
+
+' Subroutine to read holding registers
+READ_HOLDING_REGISTERS:
+    tx_buffer[0] = slave_address
+    tx_buffer[1] = function_code
+    tx_buffer[2] = 32  ' Byte count (16 registers * 2 bytes each)
+    tx_buffer[3] = holding_reg1.HIGHBYTE
+    tx_buffer[4] = holding_reg1.LOWBYTE
+    tx_buffer[5] = holding_reg2.HIGHBYTE
+    tx_buffer[6] = holding_reg2.LOWBYTE
+    tx_buffer[7] = holding_reg3.HIGHBYTE
+    tx_buffer[8] = holding_reg3.LOWBYTE
+    tx_buffer[9] = holding_reg4.HIGHBYTE
+    tx_buffer[10] = holding_reg4.LOWBYTE
+    tx_buffer[11] = holding_reg5.HIGHBYTE
+    tx_buffer[12] = holding_reg5.LOWBYTE
+    tx_buffer[13] = holding_reg6.HIGHBYTE
+    tx_buffer[14] = holding_reg6.LOWBYTE
+    tx_buffer[15] = holding_reg7.HIGHBYTE
+    tx_buffer[16] = holding_reg7.LOWBYTE
+    tx_buffer[17] = holding_reg8.HIGHBYTE
+    tx_buffer[18] = holding_reg8.LOWBYTE
+    tx_buffer[19] = holding_reg9.HIGHBYTE
+    tx_buffer[20] = holding_reg9.LOWBYTE
+    tx_buffer[21] = holding_reg10.HIGHBYTE
+    tx_buffer[22] = holding_reg10.LOWBYTE
+    tx_buffer[23] = holding_reg11.HIGHBYTE
+    tx_buffer[24] = holding_reg11.LOWBYTE
+    tx_buffer[25] = holding_reg12.HIGHBYTE
+    tx_buffer[26] = holding_reg12.LOWBYTE
+    tx_buffer[27] = holding_reg13.HIGHBYTE
+    tx_buffer[28] = holding_reg13.LOWBYTE
+    tx_buffer[29] = holding_reg14.HIGHBYTE
+    tx_buffer[30] = holding_reg14.LOWBYTE
+    tx_buffer[31] = holding_reg15.HIGHBYTE
+    tx_buffer[32] = holding_reg15.LOWBYTE
+    tx_buffer[33] = holding_reg16.HIGHBYTE
+    tx_buffer[34] = holding_reg16.LOWBYTE
+    data_length = 35
+    GOSUB CALCULATE_CRC
+    tx_buffer[35] = crc.LOWBYTE
+    tx_buffer[36] = crc.HIGHBYTE
+    GOSUB SEND_MODBUS_RESPONSE
+    RETURN
+    
+' Subroutine to write single coil
+WRITE_SINGLE_COIL:
+    IF start_address = 1 THEN
+        IF rx_buffer[4] = 255 THEN
+            coil1 = 1
+        ELSE
+            coil1 = 0
+        ENDIF
+    ELSEIF start_address = 2 THEN
+        IF rx_buffer[4] = 255 THEN
+            coil2 = 1
+        ELSE
+            coil2 = 0
+        ENDIF
+    ENDIF
+    
+    GOSUB SEND_MODBUS_RESPONSE
+    RETURN
+
+' Subroutine to write single register
+WRITE_SINGLE_REGISTER:
+    IF start_address = 1 THEN
+        holding_reg1 = rx_buffer[4] * 256 + rx_buffer[5]
+    ELSEIF start_address = 2 THEN
+        holding_reg2 = rx_buffer[4] * 256 + rx_buffer[5]
+    ENDIF
+    GOSUB SEND_MODBUS_RESPONSE
+    RETURN
+
+WRITE_MULTIPLE_REGISTERS:
+    quantity = rx_buffer[7] * 256 + rx_buffer[8]
+    FOR i_global = 0 TO quantity - 1
+        SELECT CASE rx_buffer[3]
+            CASE $00
+                holding_reg1.lowBYTE = rx_buffer[8]
+                holding_reg1.HIGHBYTE = rx_buffer[7]
+            CASE $01
+                holding_reg2.lowBYTE = rx_buffer[8]
+                holding_reg2.HIGHBYTE = rx_buffer[7]
+            CASE $02
+                holding_reg3.lowBYTE = rx_buffer[8]
+                holding_reg3.HIGHBYTE = rx_buffer[7]
+            CASE $03
+                holding_reg4.lowBYTE = rx_buffer[8]
+                holding_reg4.HIGHBYTE = rx_buffer[7]
+            CASE $04
+                holding_reg5.lowBYTE = rx_buffer[8]
+                holding_reg5.HIGHBYTE = rx_buffer[7]
+            CASE $05
+                holding_reg6.lowBYTE = rx_buffer[8]
+                holding_reg6.HIGHBYTE = rx_buffer[7]
+            CASE $06
+                holding_reg7.lowBYTE = rx_buffer[8]
+                holding_reg7.HIGHBYTE = rx_buffer[7]
+            CASE $07
+                holding_reg8.lowBYTE = rx_buffer[8]
+                holding_reg8.HIGHBYTE = rx_buffer[7]
+            CASE $08
+                holding_reg9.lowBYTE = rx_buffer[8]
+                holding_reg9.HIGHBYTE = rx_buffer[7]
+            CASE $09
+                holding_reg10.lowBYTE = rx_buffer[8]
+                holding_reg10.HIGHBYTE = rx_buffer[7]
+            CASE $0A
+                holding_reg11.lowBYTE = rx_buffer[8]
+                holding_reg11.HIGHBYTE = rx_buffer[7]
+            CASE $0B
+                holding_reg12.lowBYTE = rx_buffer[8]
+                holding_reg12.HIGHBYTE = rx_buffer[7]
+            CASE $0C
+                holding_reg13.lowBYTE = rx_buffer[8]
+                holding_reg13.HIGHBYTE = rx_buffer[7]
+            CASE $0D
+                holding_reg14.lowBYTE = rx_buffer[8]
+                holding_reg14.HIGHBYTE = rx_buffer[7]
+            CASE $0E
+                holding_reg15.lowBYTE = rx_buffer[8]
+                holding_reg15.HIGHBYTE = rx_buffer[7]
+            CASE $0F
+                holding_reg16.lowBYTE = rx_buffer[8]
+                holding_reg16.HIGHBYTE = rx_buffer[7]
+        END SELECT
+    NEXT i_global
+    
+    ' Respond with the function code, start address, and quantity of registers written
+    tx_buffer[0] = slave_address
+    tx_buffer[1] = function_code
+    tx_buffer[2] = rx_buffer[2]
+    tx_buffer[3] = rx_buffer[3]
+    tx_buffer[4] = rx_buffer[4]
+    tx_buffer[5] = rx_buffer[5]
+    data_length = 6
+    GOSUB CALCULATE_CRC
+    tx_buffer[6] = crc.LOWBYTE
+    tx_buffer[7] = crc.HIGHBYTE
+    
+    GOSUB SEND_MODBUS_RESPONSE
+    RETURN
+
+LED_INDICATION:
+    SELECT CASE coil1 
+        CASE 0  ' Read Coils
+            low LED0
+        CASE 1  ' Read Holding Registers
+            high LED0
+    END SELECT
+    
+    SELECT CASE coil2 
+        CASE 0  ' Read Coils
+            low LED1
+        CASE 1  ' Read Holding Registers
+            high LED1
+    END SELECT
+    return
+' Subroutine to calculate CRC
+' This is by no means the best way to do a CRC16 Checksum
+' But this works so don't touch it
+CALCULATE_CRC:
+crc = 65535
+    i_global = 0
+    WHILE i_global < data_length
+        crc = crc ^ tx_buffer[i_global]
+        j = 0
+        WHILE j < 8
+            IF (crc & 1) = 1 THEN
+                crc = (crc / 2) ^ 40961
+            ELSE
+                crc = crc / 2
+            ENDIF
+            j = j + 1
+        WEND
+        i_global = i_global + 1
+    WEND					' CRC16 high byte
+    RETURN
+
+' Subroutine to send Modbus response
+SEND_MODBUS_RESPONSE:
+    i_global = 0
+    WHILE i_global < 37
+        high driver
+        temp_byte = tx_buffer[i_global]
+        HSEROUT [temp_byte]
+        i_global = i_global + 1
+    WEND
+    pause 100
+    TRISD.1 = 1
+    low driver
+    
+    RETURN
+    
