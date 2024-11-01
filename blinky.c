@@ -1,6 +1,7 @@
 #include "Configuration_Header_File.h"  /*Header file for Configuration Bits*/
 #include <pic18f4550.h>                  /*Header file PIC18f4550 definitions*/
 
+
 #pragma config PLLDIV = 5 // this does not matter since we are using the internal clock
 #pragma config CPUDIV = OSC1_PLL2// this does not matter since we are using the internal clock
 #pragma config USBDIV = 2 // this does not matter since we are using the internal clock
