@@ -4,7 +4,7 @@
 
 // Configuration bits
 #pragma config OSC = IRCIO67, FCMEN = OFF, IESO = OFF, PWRT = ON, BOREN = BOACTIVE
-#pragma config BORV = 3, WDT = ON, WDTPS = 32768, PBADEN = OFF, LPT1OSC = OFF
+#pragma config BORV = 3, WDT = ON, WDTPS = 65535, PBADEN = OFF, LPT1OSC = OFF
 #pragma config MCLRE = OFF, STVREN = ON, LVP = OFF, BBSIZ = 1024, XINST = OFF
 #pragma config DEBUG = OFF, CP0 = OFF, CP1 = OFF, CP2 = OFF, CP3 = OFF
 #pragma config CPB = OFF, CPD = OFF, WRT0 = OFF, WRT1 = OFF, WRT2 = OFF
@@ -61,11 +61,10 @@ void main(void) {
     
     
     while (1) {
-        if (holding_reg[4] == 0xFFFF) {
-            holding_reg[4] = 0xFFFF;
-            LATDbits.LATD4 = 1;
-            __delay_ms(500);  // Delay for 500 ms
-        }
+        LATDbits.LATD4 = 0;
+        __delay_ms(500);
+        LATDbits.LATD4 = 1;
+        __delay_ms(500);
         
     }
     
@@ -250,7 +249,7 @@ void receive_modbus_frame(void) {
         for (;i_global < 8; i_global++) {
             DRIVER = 0;
             while (!PIR1bits.RCIF);
-            //asm("nop");
+           
             rx_buffer[i_global] = RCREG;
           //  i_global++;
             DRIVER = 1;
@@ -260,7 +259,7 @@ void receive_modbus_frame(void) {
         while (i_global < 11) {
             DRIVER = 0;
             while (!PIR1bits.RCIF);
-            //asm("nop");
+           
             rx_buffer[i_global] = RCREG;
             i_global++;
             DRIVER = 1;
@@ -281,4 +280,5 @@ void __interrupt() ISR(void) {
         }
         PIR1bits.RCIF = 0;
     }
+    asm("CLRWDT");
 }
